@@ -9,7 +9,10 @@ pub enum SurrealDbSchemaDeriveQueryError {
     SurrealDbError(surrealdb::Error),
 
     #[error("Value conversion failed")]
-    InvalidValueTypeError(InvalidValueTypeError)
+    InvalidValueTypeError(InvalidValueTypeError),
+
+    #[error("the data for key {field} is not available")]
+    MissingFieldError {field: String}
 }
 
 #[derive(Debug, Error)]

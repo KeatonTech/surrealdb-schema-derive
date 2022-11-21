@@ -26,6 +26,9 @@ pub(crate) fn type_to_surreal_field_type(syn_type: &Type) -> Option<(TokenStream
                     "f32" | "f64" => {
                         Some((quote! {surrealdb_schema_derive::surrealdb::sql::Kind::Float}, false))
                     }
+                    "Vec" => {
+                        Some((quote! {surrealdb_schema_derive::surrealdb::sql::Kind::Array}, false))
+                    }
                     "Option" => {
                         if let syn::PathArguments::AngleBracketed(ref angle_args) =
                             path_segment.arguments

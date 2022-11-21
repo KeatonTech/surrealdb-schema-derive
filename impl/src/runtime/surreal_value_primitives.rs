@@ -1,4 +1,4 @@
-use surrealdb::sql::{Thing, Value};
+use surrealdb::sql::{Array, Thing, Value};
 
 use crate::{errors::InvalidValueTypeError, SurrealDbRow, SurrealDbSchemaDeriveQueryError};
 
@@ -33,21 +33,24 @@ impl<T> From<Option<T>> for SurrealOption<T> {
 // Surreal -> Rust
 
 impl TryFrom<SurrealValue> for bool {
-    type Error = InvalidValueTypeError;
+    type Error = SurrealDbSchemaDeriveQueryError;
 
     fn try_from(value: SurrealValue) -> Result<Self, Self::Error> {
         match value.0 {
             Value::True => Ok(true),
             Value::False => Ok(false),
-            _ => Err(InvalidValueTypeError {
+            _ => Err(SurrealDbSchemaDeriveQueryError::InvalidValueTypeError(InvalidValueTypeError {
                 expected_type: "bool".into(),
                 received_type: value.0.to_string(),
-            }),
+            })),
         }
     }
 }
 
-impl<T> TryFrom<SurrealValue> for SurrealOption<T> where T: TryFrom<SurrealValue> {
+impl<T> TryFrom<SurrealValue> for SurrealOption<T>
+where
+    T: TryFrom<SurrealValue>,
+{
     type Error = <T as TryFrom<SurrealValue>>::Error;
 
     fn try_from(value: SurrealValue) -> Result<Self, Self::Error> {
@@ -59,19 +62,42 @@ impl<T> TryFrom<SurrealValue> for SurrealOption<T> where T: TryFrom<SurrealValue
     }
 }
 
+impl<T> TryFrom<SurrealValue> for Vec<T>
+where
+    T: TryFrom<SurrealValue, Error = SurrealDbSchemaDeriveQueryError>,
+{
+    type Error = SurrealDbSchemaDeriveQueryError;
+
+    fn try_from(value: SurrealValue) -> Result<Self, Self::Error> {
+        let Value::Array(array_val) = value.0 else {
+            return Err(SurrealDbSchemaDeriveQueryError::InvalidValueTypeError(InvalidValueTypeError {
+                expected_type: "array".into(),
+                received_type: value.0.to_string(),
+            }));
+        };
+        println!("{:?}", array_val);
+
+        return Ok(array_val
+            .0
+            .into_iter()
+            .map(|val| SurrealValue(val).try_into())
+            .collect::<Result<Vec<_>, _>>()?);
+    }
+}
+
 macro_rules! impl_surreal_value_try_from {
     ($variant:pat => $map:expr => $type:ty) => {
         impl TryFrom<SurrealValue> for $type {
-            type Error = InvalidValueTypeError;
+            type Error = SurrealDbSchemaDeriveQueryError;
 
             fn try_from(value: SurrealValue) -> Result<Self, Self::Error> {
                 if let $variant = value.0 {
                     Ok($map)
                 } else {
-                    Err(InvalidValueTypeError {
+                    Err(SurrealDbSchemaDeriveQueryError::InvalidValueTypeError(InvalidValueTypeError {
                         expected_type: stringify!($type).into(),
                         received_type: value.0.to_string(),
-                    })
+                    }))
                 }
             }
         }
@@ -79,10 +105,10 @@ macro_rules! impl_surreal_value_try_from {
 
     ($variant:pat => try_into $map:expr => $type:ty) => {
         impl_surreal_value_try_from! {$variant => $map.try_into().map_err(move |_| {
-            InvalidValueTypeError {
+            SurrealDbSchemaDeriveQueryError::InvalidValueTypeError(InvalidValueTypeError {
                 expected_type: stringify!($type).into(),
                 received_type: "Type mapping failed".into(),
-            }
+            })
         })? => $type}
     };
 }
@@ -112,6 +138,20 @@ impl Into<SurrealValue> for bool {
 impl Into<SurrealValue> for String {
     fn into(self) -> SurrealValue {
         SurrealValue(Value::Strand(surrealdb::sql::Strand(self)))
+    }
+}
+
+impl<T> Into<SurrealValue> for Vec<T>
+where
+    T: Into<SurrealValue>,
+{
+    fn into(self) -> SurrealValue {
+        SurrealValue(Value::Array(Array(
+            self.into_iter()
+                .map(|item| item.into() as SurrealValue)
+                .map(|item| item.0)
+                .collect()
+        )))
     }
 }
 

@@ -11,19 +11,27 @@ pub(crate) fn gen_try_from_surreal_value(
         .iter()
         .map(|field| {
             let field_ident = field.ident.clone().unwrap();
+
+            let extract_field_value = quote! {
+                surrealdb_schema_derive::SurrealValue(
+                    object_value.0
+                        .get(stringify!(#field_ident))
+                        .ok_or(surrealdb_schema_derive::SurrealDbSchemaDeriveQueryError::MissingFieldError {
+                                field: stringify!(#field_ident).into()  
+                        })?
+                        .clone()
+                )
+            };
+
             if let Some(inner_type) = maybe_extract_optional(field) {
                 quote! {
                     #field_ident: TryInto::<surrealdb_schema_derive::SurrealOption<#inner_type>>::try_into(
-                        surrealdb_schema_derive::SurrealValue(
-                            object_value.0.get(stringify!(name)).unwrap().clone(),
-                        )
+                        #extract_field_value
                     )?.into()
                 }
             } else {
                 quote! {
-                    #field_ident: surrealdb_schema_derive::SurrealValue(
-                        object_value.0.get(stringify!(#field_ident)).unwrap().clone()
-                    ).try_into()?
+                    #field_ident: #extract_field_value.try_into()?
                 }
             }
         })
